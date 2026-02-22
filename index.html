@@ -34,6 +34,9 @@
       --slider-thumb: #111;
       --caption-color: #666666;
       --divider: #F0F0F0;
+      --breath-bg: #F2F0EC;
+      --blob-stroke: #1A1A1A;
+      --blob-fill-color: #1A1A1A;
     }
 
     body.dark {
@@ -62,6 +65,9 @@
       --slider-thumb: #EFEFEF;
       --caption-color: #484848;
       --divider: #2E2E2E;
+      --breath-bg: #141414;
+      --blob-stroke: #EFEFEF;
+      --blob-fill-color: #EFEFEF;
     }
 
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -397,6 +403,34 @@
     .card.open .chevron svg { transform: rotate(180deg); }
     .card.session-card .chevron { display: none; }
 
+    /* ── Deep breath overlay ── */
+    .breath-overlay {
+      position: fixed; inset: 0; z-index: 600;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 36px;
+      background: var(--breath-bg);
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.7s ease;
+    }
+    .breath-overlay.active { opacity: 1; pointer-events: auto; }
+
+    .breath-blob svg { width: 180px; height: 180px; overflow: visible; }
+
+    .blob-outline {
+      fill: none;
+      stroke: var(--blob-stroke);
+      stroke-width: 1.2;
+      opacity: 0.35;
+    }
+    .blob-fill { fill: var(--blob-fill-color); }
+
+    .breath-text {
+      font-size: 14px; font-weight: 500;
+      color: var(--blob-stroke);
+      letter-spacing: 0.12em; text-transform: uppercase;
+      opacity: 0.5;
+    }
+
     /* ── Mobile ── */
     @media (max-width: 700px) {
       body { padding: 0 16px 60px; }
@@ -434,6 +468,22 @@
     </svg>
   </button>
 
+  <!-- Deep breath overlay -->
+  <div class="breath-overlay" id="breathOverlay">
+    <div class="breath-blob">
+      <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <clipPath id="breathClip">
+            <rect id="breathRect" x="0" y="200" width="200" height="0" />
+          </clipPath>
+        </defs>
+        <path class="blob-outline" d="M 102,28 C 130,24 164,46 172,80 C 180,114 164,152 134,166 C 104,180 64,174 42,150 C 20,126 22,84 42,58 C 58,36 80,32 102,28 Z" />
+        <path class="blob-fill"    d="M 102,28 C 130,24 164,46 172,80 C 180,114 164,152 134,166 C 104,180 64,174 42,150 C 20,126 22,84 42,58 C 58,36 80,32 102,28 Z" clip-path="url(#breathClip)" />
+      </svg>
+    </div>
+    <p class="breath-text">Take one deep breath</p>
+  </div>
+
   <!-- Modal backdrop -->
   <div class="modal-backdrop" id="modalBackdrop"></div>
 
@@ -465,6 +515,14 @@
     <div class="setting-row">
       <span class="setting-label">Dark mode</span>
       <button class="toggle-btn off" id="darkToggle"></button>
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <span class="settings-section-label">Ritual</span>
+    <div class="setting-row">
+      <span class="setting-label">Deep breath before round</span>
+      <button class="toggle-btn off" id="breathToggle"></button>
     </div>
 
     <div class="settings-divider"></div>
@@ -611,7 +669,7 @@
     // ─── State ────────────────────────────────────────────────────
     let s = { method: null, cardNum: null, phase: 'work', secs: 0, breakSecs: 0, interval: null };
 
-    const settings = { muted: false, volume: 0.8, sound: 'silver' };
+    const settings = { muted: false, volume: 0.8, sound: 'silver', deepBreath: false };
 
     // ─── Sounds ───────────────────────────────────────────────────
     const playSound = () => {
@@ -710,6 +768,69 @@
       }
     };
 
+    // ─── Breath sound ─────────────────────────────────────────────
+    const playBreathSound = () => {
+      if (settings.muted) return;
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const now = ctx.currentTime;
+      const vol = settings.volume * 0.22;
+      const dur = 4.5;
+
+      const bufLen = Math.floor(ctx.sampleRate * (dur + 0.5));
+      const buf = ctx.createBuffer(2, bufLen, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) {
+        const d = buf.getChannelData(ch);
+        for (let i = 0; i < bufLen; i++) d[i] = Math.random() * 2 - 1;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 100;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.7;
+      bp.frequency.setValueAtTime(350, now);
+      bp.frequency.linearRampToValueAtTime(1100, now + dur * 0.55);
+      bp.frequency.linearRampToValueAtTime(500, now + dur);
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(vol, now + 1.4);
+      gain.gain.setValueAtTime(vol, now + dur - 1.2);
+      gain.gain.linearRampToValueAtTime(0, now + dur);
+
+      src.connect(hp); hp.connect(bp); bp.connect(gain); gain.connect(ctx.destination);
+      src.start(now); src.stop(now + dur + 0.1);
+    };
+
+    // ─── Breath animation ─────────────────────────────────────────
+    const startBreath = () => new Promise(resolve => {
+      const overlay  = document.getElementById('breathOverlay');
+      const rect     = document.getElementById('breathRect');
+      const FILL_DUR = 4500;
+
+      overlay.classList.add('active');
+      playBreathSound();
+
+      // Small delay so overlay fades in before fill starts
+      setTimeout(() => {
+        const start = performance.now();
+        const animate = now => {
+          const t = Math.min((now - start) / FILL_DUR, 1);
+          // Ease in-out cubic
+          const e = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
+          rect.setAttribute('y',      200 * (1 - e));
+          rect.setAttribute('height', 200 * e);
+          if (t < 1) { requestAnimationFrame(animate); }
+          else {
+            setTimeout(() => {
+              overlay.classList.remove('active');
+              setTimeout(resolve, 750);
+            }, 400);
+          }
+        };
+        requestAnimationFrame(animate);
+      }, 500);
+    });
+
     const makeReverb = (ctx, duration) => {
       const len = Math.floor(ctx.sampleRate * duration);
       const buf = ctx.createBuffer(2, len, ctx.sampleRate);
@@ -740,6 +861,7 @@
     const modalBackdrop = document.getElementById('modalBackdrop');
     const soundToggle   = document.getElementById('soundToggle');
     const darkToggle    = document.getElementById('darkToggle');
+    const breathToggle  = document.getElementById('breathToggle');
     const volSlider     = document.getElementById('volSlider');
     const soundOpts     = document.querySelectorAll('.sound-opt');
 
@@ -778,6 +900,11 @@
     });
 
     volSlider.addEventListener('input', () => { settings.volume = volSlider.value / 100; });
+
+    breathToggle.addEventListener('click', () => {
+      settings.deepBreath = !settings.deepBreath;
+      breathToggle.classList.toggle('off', !settings.deepBreath);
+    });
 
     soundOpts.forEach(opt => {
       opt.addEventListener('click', () => {
@@ -861,10 +988,11 @@
       s.interval = setInterval(tickBreak, 1000);
     };
 
-    const onBreakEnd = () => {
+    const onBreakEnd = async () => {
       clearInterval(s.interval);
       playSound();
       if (s.method === '52-17') {
+        if (settings.deepBreath) await startBreath();
         s.phase = 'work'; s.secs = 52 * 60;
         updateDisplay(); updateTab();
         s.interval = setInterval(tickWork, 1000);
@@ -921,12 +1049,13 @@
         document.getElementById('timer' + s.cardNum).classList.add('active');
         openBody(card);
         updateDisplay(); updateTab();
+        if (settings.deepBreath) await startBreath();
         s.interval = setInterval(tickWork, 1000);
       }
     };
 
     // ─── Flowtime begin ───────────────────────────────────────────
-    document.getElementById('flowtimeBegin').addEventListener('click', e => {
+    document.getElementById('flowtimeBegin').addEventListener('click', async e => {
       e.stopPropagation();
       const work = Math.max(1, parseInt(document.getElementById('workMin').value)  || 25);
       const brk  = Math.max(1, parseInt(document.getElementById('breakMin').value) || 5);
@@ -943,6 +1072,7 @@
       body.addEventListener('transitionend', () => { body.style.height = 'auto'; }, { once: true });
 
       updateDisplay(); updateTab();
+      if (settings.deepBreath) await startBreath();
       s.interval = setInterval(tickWork, 1000);
     });
 

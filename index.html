@@ -718,47 +718,55 @@
 
     const settings = { muted: false, volume: 0.8, sound: 'silver', deepBreath: false };
 
-    // ─── Audio: unlock on first tap + bypass iOS silent mode ──────
+    // ─── Audio context ────────────────────────────────────────────
     let _audioCtx = null;
-    let _audioUnlocked = false;
+    const _AudioCtxClass = window.AudioContext || window.webkitAudioContext || null;
 
-    // Silent audio element keeps the audio session active and
-    // forces iOS to treat our sounds as media (bypasses silent switch)
     const _silentAudio = document.createElement('audio');
     _silentAudio.setAttribute('playsinline', '');
+    _silentAudio.setAttribute('webkit-playsinline', '');
     _silentAudio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRwRHAAAAAAD/+1DEAAAHAAGf9AAAIgAANIAAAAQAAAGkAAAAIAAANIAAAARMQU1FMy4xMDBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ==';
     _silentAudio.loop = true;
 
+    // Idempotent — safe to call on every user gesture.
+    // No permanent flag: if a previous attempt failed, the next tap retries.
     const unlockAudio = () => {
-      if (_audioUnlocked) return;
-      _audioUnlocked = true;
-
       _silentAudio.play().catch(() => {});
-
-      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (_audioCtx.state === 'suspended') _audioCtx.resume();
-
-      // Ping a silent buffer to fully unlock Web Audio
-      const buf = _audioCtx.createBuffer(1, 1, 22050);
-      const src = _audioCtx.createBufferSource();
-      src.buffer = buf; src.connect(_audioCtx.destination); src.start(0);
+      if (!_AudioCtxClass) return; // Web Audio not supported
+      try {
+        if (!_audioCtx || _audioCtx.state === 'closed') {
+          _audioCtx = new _AudioCtxClass();
+        }
+        if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+        // Ping a silent buffer to fully activate the context
+        if (_audioCtx.state === 'running') {
+          const buf = _audioCtx.createBuffer(1, 1, 22050);
+          const src = _audioCtx.createBufferSource();
+          src.buffer = buf; src.connect(_audioCtx.destination); src.start(0);
+        }
+      } catch(e) {}
     };
 
     ['click', 'touchstart', 'touchend'].forEach(evt => {
       document.addEventListener(evt, unlockAudio, { once: false, passive: true });
     });
 
-    // When returning from background, force re-unlock on next tap
-    // (iOS suspends AudioContext on background; it can only resume via user gesture)
+    // When returning from background, the next tap will re-unlock via the listener above
+    // (iOS suspends AudioContext on background; resume() only works from a user gesture)
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') _audioUnlocked = false;
+      if (document.visibilityState === 'visible' && _audioCtx && _audioCtx.state === 'suspended') {
+        _audioCtx.resume().catch(() => {});
+      }
     });
 
     const getAudioCtx = () => {
-      if (!_audioCtx || _audioCtx.state === 'closed') {
-        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+      if (!_AudioCtxClass) return null;
+      try {
+        if (!_audioCtx || _audioCtx.state === 'closed') {
+          _audioCtx = new _AudioCtxClass();
+        }
+        if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+      } catch(e) { return null; }
       return _audioCtx;
     };
 
@@ -783,7 +791,8 @@
     const playSound = async () => {
       if (settings.muted) return;
       const ctx = getAudioCtx();
-      if (ctx.state !== 'running') await ctx.resume();
+      if (!ctx) return;
+      if (ctx.state !== 'running') { try { await ctx.resume(); } catch(e) { return; } }
       const now = ctx.currentTime;
       const vol = settings.volume;
 
@@ -881,7 +890,8 @@
     const playBreathSound = async () => {
       if (settings.muted) return;
       const ctx = getAudioCtx();
-      if (ctx.state !== 'running') await ctx.resume();
+      if (!ctx) return;
+      if (ctx.state !== 'running') { try { await ctx.resume(); } catch(e) { return; } }
       const now = ctx.currentTime;
       const vol = settings.volume * 0.22;
       const dur = 4.5;
@@ -1033,7 +1043,7 @@
         opt.classList.add('selected');
         settings.sound = opt.dataset.sound;
         saveSettings();
-        playSound();
+        playSound().catch(() => {});
       });
     });
 
@@ -1150,7 +1160,7 @@
 
     const onWorkEnd = () => {
       clearInterval(s.interval);
-      playSound();
+      playSound().catch(() => {});
       if (s.method === '90min') {
         s.phase = 'done'; updateDisplay(); document.title = 'Done · Focus';
         showStartAgain(); return;
@@ -1162,7 +1172,7 @@
 
     const onBreakEnd = async () => {
       clearInterval(s.interval);
-      playSound();
+      playSound().catch(() => {});
       if (s.method === '52-17') {
         if (settings.deepBreath) await startBreath();
         s.phase = 'work'; s.secs = 52 * 60;
@@ -1248,6 +1258,7 @@ updateDisplay(); updateTab();
 
     document.getElementById('flowtimeBegin').addEventListener('click', async e => {
       e.stopPropagation();
+      unlockAudio();
       startKeepAlive();
       const work = Math.max(1, parseInt(document.getElementById('workMin').value)  || 25);
       const brk  = Math.max(1, parseInt(document.getElementById('breakMin').value) || 5);
@@ -1350,12 +1361,13 @@ updateDisplay(); updateTab();
     document.querySelectorAll('.start-btn').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
+        unlockAudio();
         if (btn.dataset.method === 'restart') { restartSession(); return; }
         launchSession(btn.dataset.method, btn.closest('.card'));
       });
     });
     document.querySelectorAll('.end-btn').forEach(btn => {
-      btn.addEventListener('click', e => { e.stopPropagation(); resetSession(); });
+      btn.addEventListener('click', e => { e.stopPropagation(); unlockAudio(); resetSession(); });
     });
     document.getElementById('backLink').addEventListener('click', () => location.reload());
   </script>

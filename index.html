@@ -719,44 +719,61 @@
     const settings = { muted: false, volume: 0.8, sound: 'silver', deepBreath: false };
 
     // ─── Audio context ────────────────────────────────────────────
-    // iOS silent mode fix: Web Audio defaults to 'ambient' category (mute switch respected).
-    // Connecting a MediaElementAudioSourceNode upgrades the session to 'playback' category,
-    // which bypasses the silent switch — the same way music apps do it.
+    // iOS silent mode: Web Audio uses 'ambient' session (mute switch respected).
+    // createMediaElementSource() on a playing <audio> element upgrades the
+    // AudioContext to 'playback' session — bypassing the silent switch.
+    // The WAV must have real sample data; a 0-byte data chunk does nothing.
     let _audioCtx = null;
-    let _mediaElCtx = null; // which ctx currently has a media source connected
+    let _mediaConnected = false;
     const _AudioCtxClass = window.AudioContext || window.webkitAudioContext || null;
 
-    // Minimal silent WAV (44 bytes)
-    const _SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+    // Build a 400ms silent WAV (8kHz mono 8-bit) via ArrayBuffer at page load.
+    // Using a blob URL avoids the large base64 inline and ensures real sample data.
+    const _silentUrl = (() => {
+      try {
+        const n = 3200; // 400 ms × 8000 Hz
+        const ab = new ArrayBuffer(44 + n);
+        const v  = new DataView(ab);
+        const s  = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+        s(0,'RIFF'); v.setUint32(4, 36+n, true); s(8,'WAVE');
+        s(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+        v.setUint32(24,8000,true); v.setUint32(28,8000,true); v.setUint16(32,1,true); v.setUint16(34,8,true);
+        s(36,'data'); v.setUint32(40,n,true);
+        for (let i = 44; i < 44+n; i++) v.setUint8(i, 128); // 0x80 = silence in unsigned 8-bit PCM
+        return URL.createObjectURL(new Blob([ab], { type: 'audio/wav' }));
+      } catch(e) { return ''; }
+    })();
 
-    const _makeMediaEl = () => {
+    // Single <audio> element — created once, reused for the page lifetime.
+    const _mediaEl = (() => {
       const el = document.createElement('audio');
       el.setAttribute('playsinline', '');
-      el.src = _SILENT_WAV;
+      if (_silentUrl) el.src = _silentUrl;
       el.loop = true;
       document.body.appendChild(el);
       return el;
-    };
+    })();
 
-    // Idempotent — safe to call on every user gesture. No permanent flag.
+    // Idempotent — safe to call on every user gesture. No permanent lock.
     const unlockAudio = () => {
       if (!_AudioCtxClass) return;
       try {
+        _mediaEl.play().catch(() => {});
+
         if (!_audioCtx || _audioCtx.state === 'closed') {
           _audioCtx = new _AudioCtxClass();
-          _mediaElCtx = null; // need to reconnect on new context
+          _mediaConnected = false;
         }
-        // Connect a fresh <audio> element via createMediaElementSource.
-        // This forces iOS to route all Web Audio through the 'playback' session
-        // category, which ignores the hardware mute/silent switch.
-        if (_mediaElCtx !== _audioCtx) {
-          _mediaElCtx = _audioCtx;
-          const el = _makeMediaEl();
-          el.play().catch(() => {});
-          const mediaSrc = _audioCtx.createMediaElementSource(el);
+
+        // Wire <audio> into the AudioContext once. This is what forces iOS to
+        // treat Web Audio output as 'playback' category (bypasses silent switch).
+        if (!_mediaConnected) {
+          _mediaConnected = true;
+          const mediaSrc = _audioCtx.createMediaElementSource(_mediaEl);
           mediaSrc.connect(_audioCtx.destination);
         }
-        const doUnlock = () => {
+
+        const ping = () => {
           try {
             const buf = _audioCtx.createBuffer(1, 1, 22050);
             const src = _audioCtx.createBufferSource();
@@ -764,9 +781,9 @@
           } catch(e) {}
         };
         if (_audioCtx.state === 'suspended') {
-          _audioCtx.resume().then(doUnlock).catch(() => {});
+          _audioCtx.resume().then(ping).catch(() => {});
         } else {
-          doUnlock();
+          ping();
         }
       } catch(e) {}
     };

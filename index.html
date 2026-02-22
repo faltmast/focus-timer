@@ -8,6 +8,14 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#111111" />
+  <meta name="description" content="A research-backed focus timer. Pick a method, hit start, work. No sign-up, no friction." />
+  <meta property="og:title" content="Focus" />
+  <meta property="og:description" content="A research-backed focus timer. Pick a method, hit start, work. No sign-up, no friction." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="icon-512.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Focus" />
+  <meta name="twitter:description" content="A research-backed focus timer. Pick a method, hit start, work." />
   <style>
     /* ── Variables ── */
     :root {
@@ -439,7 +447,7 @@
     @media (max-width: 700px) {
       html, body {
         height: 100dvh;
-        overflow: hidden;
+        overflow-x: hidden;
       }
       body { padding: 0; }
 
@@ -486,6 +494,8 @@
   </style>
 </head>
 <body>
+
+  <noscript><p style="text-align:center;padding:80px 20px;font-family:sans-serif;color:#666">JavaScript is required to run Focus.</p></noscript>
 
   <!-- Gear -->
   <button class="gear-btn" id="gearBtn" title="Settings">
@@ -700,10 +710,20 @@
 
     const settings = { muted: false, volume: 0.8, sound: 'silver', deepBreath: false };
 
+    // ─── Audio context (reuse to avoid browser limit) ─────────────
+    let _audioCtx = null;
+    const getAudioCtx = () => {
+      if (!_audioCtx || _audioCtx.state === 'closed') {
+        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (_audioCtx.state === 'suspended') _audioCtx.resume();
+      return _audioCtx;
+    };
+
     // ─── Sounds ───────────────────────────────────────────────────
     const playSound = () => {
       if (settings.muted) return;
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = getAudioCtx();
       const now = ctx.currentTime;
       const vol = settings.volume;
 
@@ -800,7 +820,7 @@
     // ─── Breath sound ─────────────────────────────────────────────
     const playBreathSound = () => {
       if (settings.muted) return;
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = getAudioCtx();
       const now = ctx.currentTime;
       const vol = settings.volume * 0.22;
       const dur = 4.5;
@@ -835,6 +855,10 @@
       const overlay  = document.getElementById('breathOverlay');
       const rect     = document.getElementById('breathRect');
       const FILL_DUR = 4500;
+
+      // Reset clip rect for repeat uses
+      rect.setAttribute('y', '200');
+      rect.setAttribute('height', '0');
 
       overlay.classList.add('active');
       playBreathSound();
@@ -911,36 +935,43 @@
     });
     modalBackdrop.addEventListener('click', closeSettings);
 
+    // ─── Persist & restore all settings ──────────────────────────
+    const saveSettings = () => localStorage.setItem('focusSettings', JSON.stringify({
+      muted: settings.muted, volume: settings.volume,
+      sound: settings.sound, deepBreath: settings.deepBreath,
+      darkMode: document.body.classList.contains('dark')
+    }));
+
+    const saved = JSON.parse(localStorage.getItem('focusSettings') || '{}');
+    if (saved.darkMode)              { document.body.classList.add('dark'); darkToggle.classList.remove('off'); }
+    if (saved.muted)                 { settings.muted = true; soundToggle.classList.add('off'); }
+    if (saved.volume !== undefined)  { settings.volume = saved.volume; volSlider.value = saved.volume * 100; }
+    if (saved.sound)                 { settings.sound = saved.sound; soundOpts.forEach(o => o.classList.toggle('selected', o.dataset.sound === saved.sound)); }
+    if (saved.deepBreath)            { settings.deepBreath = true; breathToggle.classList.remove('off'); }
+
     soundToggle.addEventListener('click', () => {
       settings.muted = !settings.muted;
       soundToggle.classList.toggle('off', settings.muted);
+      saveSettings();
     });
-
-    // Restore saved dark mode
-    if (localStorage.getItem('darkMode') === 'true') {
-      document.body.classList.add('dark');
-      darkToggle.classList.remove('off');
-    }
-
     darkToggle.addEventListener('click', () => {
       const isDark = document.body.classList.toggle('dark');
       darkToggle.classList.toggle('off', !isDark);
-      localStorage.setItem('darkMode', isDark);
+      saveSettings();
     });
-
-    volSlider.addEventListener('input', () => { settings.volume = volSlider.value / 100; });
-
+    volSlider.addEventListener('input', () => { settings.volume = volSlider.value / 100; saveSettings(); });
     breathToggle.addEventListener('click', () => {
       settings.deepBreath = !settings.deepBreath;
       breathToggle.classList.toggle('off', !settings.deepBreath);
+      saveSettings();
     });
-
     soundOpts.forEach(opt => {
       opt.addEventListener('click', () => {
         soundOpts.forEach(o => o.classList.remove('selected'));
         opt.classList.add('selected');
         settings.sound = opt.dataset.sound;
-        playSound(); // preview
+        saveSettings();
+        playSound();
       });
     });
 
@@ -1023,11 +1054,21 @@
     };
 
     // ─── Phase end logic ──────────────────────────────────────────
+    const showStartAgain = () => {
+      const card = document.querySelector(`[data-card="${s.cardNum}"]`);
+      if (!card) return;
+      const btn = card.querySelector('.start-btn');
+      btn.textContent = 'Start Again';
+      btn.dataset.method = 'reload';
+      btn.style.display = '';
+    };
+
     const onWorkEnd = () => {
       clearInterval(s.interval);
       playSound();
       if (s.method === '90min') {
-        s.phase = 'done'; updateDisplay(); document.title = 'Done · Focus'; return;
+        s.phase = 'done'; updateDisplay(); document.title = 'Done · Focus';
+        showStartAgain(); return;
       }
       s.phase = 'break'; s.secs = s.breakSecs;
       updateDisplay(); updateTab();
@@ -1044,18 +1085,19 @@
         s.interval = setInterval(tickWork, 1000);
       } else {
         s.phase = 'done'; updateDisplay(); document.title = 'Done · Focus';
+        showStartAgain();
       }
     };
 
     const tickWork = () => {
+      if (s.secs <= 1) { s.secs = 0; updateDisplay(); updateTab(); onWorkEnd(); return; }
       s.secs--;
-      if (s.secs <= 0) { s.secs = 0; updateDisplay(); updateTab(); onWorkEnd(); return; }
       updateDisplay(); updateTab();
     };
 
     const tickBreak = () => {
+      if (s.secs <= 1) { s.secs = 0; updateDisplay(); updateTab(); onBreakEnd(); return; }
       s.secs--;
-      if (s.secs <= 0) { s.secs = 0; updateDisplay(); updateTab(); onBreakEnd(); return; }
       updateDisplay(); updateTab();
     };
 
@@ -1085,9 +1127,7 @@
       document.getElementById('backLink').classList.add('visible');
       card.querySelector('.stats').style.display   = 'none';
       card.querySelector('.tagline').style.display = 'none';
-      const startBtn = card.querySelector('.start-btn');
-      startBtn.textContent  = 'Stop Session';
-      startBtn.dataset.method = 'stop';
+      card.querySelector('.start-btn').style.display = 'none';
 
       if (method === 'flowtime') {
         document.getElementById('setup1').classList.add('active');
@@ -1142,6 +1182,15 @@
         card.querySelector('.tagline').style.display  = '';
         card.querySelectorAll('.timer-view, .setup-view').forEach(v => v.classList.remove('active'));
 
+        // Restore start button text and method
+        const startBtn = card.querySelector('.start-btn');
+        if (startBtn) {
+          startBtn.textContent = 'Start Session';
+          startBtn.style.display = '';
+          const methods = { '1': 'flowtime', '2': '52-17', '3': '90min' };
+          startBtn.dataset.method = methods[card.dataset.card] || '';
+        }
+
         const n = card.dataset.card;
         const badge  = document.getElementById('phase'  + n);
         const digits = document.getElementById('digits' + n);
@@ -1177,6 +1226,7 @@
         const inner = card.querySelector('.card-body-inner');
         const isOpen = card.classList.contains('open');
         if (isOpen) {
+          body.style.transition = 'height 0.42s cubic-bezier(0.4,0,0.2,1)';
           body.style.height = body.scrollHeight + 'px';
           requestAnimationFrame(() => requestAnimationFrame(() => { body.style.height = '0'; }));
           card.classList.remove('open');
@@ -1194,14 +1244,14 @@
     document.querySelectorAll('.start-btn').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
-        if (btn.dataset.method === 'stop') { location.reload(); return; }
+        if (btn.dataset.method === 'stop' || btn.dataset.method === 'reload') { location.reload(); return; }
         launchSession(btn.dataset.method, btn.closest('.card'));
       });
     });
     document.querySelectorAll('.end-btn').forEach(btn => {
       btn.addEventListener('click', e => { e.stopPropagation(); resetSession(); });
     });
-    document.getElementById('backLink').addEventListener('click', () => location.reload());
+    document.getElementById('backLink').addEventListener('click', () => resetSession());
   </script>
 
 </body>

@@ -764,9 +764,10 @@
     };
 
     // ─── Sounds ───────────────────────────────────────────────────
-    const playSound = () => {
+    const playSound = async () => {
       if (settings.muted) return;
       const ctx = getAudioCtx();
+      if (ctx.state !== 'running') await ctx.resume();
       const now = ctx.currentTime;
       const vol = settings.volume;
 
@@ -861,9 +862,10 @@
     };
 
     // ─── Breath sound ─────────────────────────────────────────────
-    const playBreathSound = () => {
+    const playBreathSound = async () => {
       if (settings.muted) return;
       const ctx = getAudioCtx();
+      if (ctx.state !== 'running') await ctx.resume();
       const now = ctx.currentTime;
       const vol = settings.volume * 0.22;
       const dur = 4.5;
@@ -960,7 +962,7 @@
     const darkToggle    = document.getElementById('darkToggle');
     const breathToggle  = document.getElementById('breathToggle');
     const volSlider     = document.getElementById('volSlider');
-    const soundOpts     = document.querySelectorAll('.sound-opt');
+    const soundOpts     = document.querySelectorAll('.sound-opt[data-sound]');
 
     const openSettings = () => {
       settingsPanel.classList.add('open');
@@ -1020,7 +1022,7 @@
     });
 
     // ─── Mobile helper ────────────────────────────────────────────
-    const isMobile = () => window.innerWidth <= 700;
+    const isMobile = () => document.documentElement.clientWidth <= 700;
 
     // ─── Mobile: full-screen card ─────────────────────────────────
     const mobileLaunchCard = card => new Promise(resolve => {
@@ -1039,8 +1041,9 @@
     // ─── Center Card (FLIP) ───────────────────────────────────────
     const centerCard = card => new Promise(resolve => {
       const r  = card.getBoundingClientRect();
-      const tw = Math.min(480, window.innerWidth - 80);
-      const tl = (window.innerWidth - tw) / 2;
+      const vw = document.documentElement.clientWidth;
+      const tw = Math.min(480, vw - 80);
+      const tl = (vw - tw) / 2;
       const tt = 148;
 
       card.style.position   = 'fixed';
@@ -1150,7 +1153,6 @@
         updateDisplay(); updateTab();
         s.interval = setInterval(tickWork, 1000);
       } else if (s.method === 'flowtime' && s.loop) {
-        if (settings.deepBreath) await startBreath();
         s.phase = 'work'; s.secs = s.workSecs;
         updateDisplay(); updateTab();
         s.interval = setInterval(tickWork, 1000);
@@ -1163,7 +1165,7 @@
     const tickWork = () => {
       if (s.secs <= 1) { s.secs = 0; updateDisplay(); updateTab(); onWorkEnd(); return; }
       s.secs--;
-      updateDisplay(); updateTab();
+updateDisplay(); updateTab();
     };
 
     const tickBreak = () => {
@@ -1338,7 +1340,7 @@
     document.querySelectorAll('.end-btn').forEach(btn => {
       btn.addEventListener('click', e => { e.stopPropagation(); resetSession(); });
     });
-    document.getElementById('backLink').addEventListener('click', () => resetSession());
+    document.getElementById('backLink').addEventListener('click', () => location.reload());
   </script>
 
 </body>

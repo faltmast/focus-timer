@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Focus</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #E8E8E8;
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', sans-serif;
+      min-height: 100vh;
+      padding: 0 40px 80px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 52px 0 48px;
+      position: relative;
+      z-index: 10;
+      gap: 8px;
+    }
+    .site-title {
+      font-size: 28px;
+      font-weight: 600;
+      color: #111;
+      letter-spacing: -0.6px;
+    }
+    .back-link {
+      font-size: 13px;
+      font-weight: 500;
+      color: #AAA;
+      text-decoration: none;
+      cursor: pointer;
+      opacity: 0;
+      pointer-events: none;
+      height: 0;
+      overflow: hidden;
+      transform: translateY(-4px);
+      transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.34,1.3,0.64,1), color 0.2s, height 0.4s ease;
+    }
+    .back-link.visible {
+      opacity: 1;
+      pointer-events: auto;
+      height: 20px;
+      transform: translateY(0);
+    }
+    .back-link:hover { color: #444; }
+
+    /* ── Grid ── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      max-width: 1400px;
+      margin: 0 auto;
+      align-items: start;
+    }
+
+    /* ── Card ── */
+    .card {
+      width: 100%;
+      background: #fff;
+      border-radius: 28px;
+      overflow: hidden;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04);
+      transition: box-shadow 0.3s ease, transform 0.3s cubic-bezier(0.34,1.3,0.64,1), opacity 0.4s ease;
+      will-change: transform, opacity;
+    }
+    .card:hover {
+      box-shadow: 0 8px 32px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04);
+      transform: translateY(-2px);
+    }
+    .card:active { transform: scale(0.99); }
+    .card.hidden { opacity: 0; transform: scale(0.91) translateY(18px) !important; pointer-events: none; }
+    .card.session-card { cursor: default; overflow: visible; }
+    .card.session-card:hover { box-shadow: 0 24px 80px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.06); transform: none !important; }
+
+    /* ── Image ── */
+    .card-image-wrap {
+      margin: 8px 8px 0;
+      border-radius: 22px;
+      overflow: hidden;
+      position: relative;
+      height: 300px;
+    }
+    .card-image-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform 0.6s cubic-bezier(0.4,0,0.2,1);
+    }
+    .card:not(.session-card):hover .card-image-wrap img { transform: scale(1.03); }
+
+    .card-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 45%, transparent 100%);
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 20px 20px 22px;
+      gap: 16px;
+    }
+    .card-label h2 { color: #fff; font-size: 20px; font-weight: 600; letter-spacing: -0.3px; line-height: 1.2; }
+    .card-label p  { color: rgba(255,255,255,0.65); font-size: 12px; margin-top: 3px; }
+
+    .start-btn {
+      flex-shrink: 0;
+      background: rgba(60,60,60,0.55);
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+      border: 1px solid rgba(255,255,255,0.18);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 500;
+      padding: 10px 20px;
+      border-radius: 50px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s, transform 0.15s;
+    }
+    .start-btn:hover { background: rgba(90,90,90,0.72); }
+    .start-btn:active { transform: scale(0.96); }
+
+    /* ── Card body ── */
+    .card-body {
+      height: 0;
+      overflow: hidden;
+      transition: height 0.52s cubic-bezier(0.4,0,0.2,1);
+    }
+    .card-body-inner { padding: 20px 20px 4px; }
+
+    /* ── Default stats ── */
+    .stats {
+      display: flex;
+      margin-bottom: 16px;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.3s ease 0.08s, transform 0.4s cubic-bezier(0.34,1.3,0.64,1) 0.08s;
+    }
+    .stat { flex: 1; }
+    .stat-value { font-size: 17px; font-weight: 600; color: #111; letter-spacing: -0.3px; }
+    .stat-label { font-size: 11px; color: #AAA; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+    .tagline {
+      font-size: 13px; color: #999; margin-bottom: 18px;
+      opacity: 0; transform: translateY(6px);
+      transition: opacity 0.3s ease 0.16s, transform 0.4s cubic-bezier(0.34,1.2,0.64,1) 0.16s;
+    }
+    .card.open .stats, .card.open .tagline { opacity: 1; transform: translateY(0); }
+
+    /* ── Setup view (Flowtime) ── */
+    .setup-view {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
+      padding: 28px 16px 8px;
+    }
+    .setup-view.active { display: flex; }
+
+    .setup-inputs {
+      display: flex;
+      gap: 48px;
+      justify-content: center;
+    }
+    .setup-field {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .setup-label {
+      font-size: 11px; font-weight: 600; color: #CCC;
+      text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .time-input {
+      font-size: 48px;
+      font-weight: 200;
+      font-family: 'SF Mono', 'Fira Code', 'Roboto Mono', monospace;
+      color: #111;
+      width: 96px;
+      border: none;
+      border-bottom: 1.5px solid #E0E0E0;
+      background: transparent;
+      text-align: center;
+      outline: none;
+      -moz-appearance: textfield;
+      padding-bottom: 4px;
+      transition: border-color 0.2s;
+    }
+    .time-input:focus { border-color: #999; }
+    .time-input::-webkit-inner-spin-button,
+    .time-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+    .setup-unit { font-size: 12px; color: #CCC; letter-spacing: 0.04em; text-transform: uppercase; }
+
+    .begin-btn {
+      width: 100%;
+      background: #111; color: #fff;
+      font-size: 14px; font-weight: 500;
+      padding: 13px; border: none;
+      border-radius: 14px; cursor: pointer;
+      margin-bottom: 8px;
+      transition: background 0.2s, transform 0.15s;
+    }
+    .begin-btn:hover { background: #333; }
+    .begin-btn:active { transform: scale(0.98); }
+
+    /* ── Timer view ── */
+    .timer-view {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 20px 8px;
+      gap: 10px;
+    }
+    .timer-view.active { display: flex; }
+
+    .phase-badge {
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: #999; background: #F5F5F5;
+      padding: 4px 14px; border-radius: 50px;
+      transition: color 0.5s, background 0.5s;
+    }
+    .phase-badge.break { color: #5A8A6A; background: #EBF4EE; }
+    .phase-badge.done  { color: #999;    background: #F5F5F5; }
+
+    .timer-digits {
+      font-family: 'SF Mono', 'Fira Code', 'Roboto Mono', monospace;
+      font-size: 58px; font-weight: 200;
+      color: #111; letter-spacing: -3px; line-height: 1;
+      transition: color 0.5s;
+    }
+    .timer-digits.break { color: #5A8A6A; }
+    .timer-digits.done  { color: #CCC; }
+
+    .end-btn {
+      margin-top: 6px; margin-bottom: 4px;
+      background: none;
+      border: 1px solid #EAEAEA;
+      color: #BBB;
+      font-size: 12px; font-weight: 500;
+      padding: 7px 20px; border-radius: 50px;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .end-btn:hover { border-color: #CCC; color: #666; }
+
+    /* ── Chevron ── */
+    .chevron {
+      display: flex;
+      justify-content: center;
+      padding: 14px 16px 16px;
+      color: #CCC;
+    }
+    .chevron svg {
+      width: 18px; height: 18px;
+      transition: transform 0.45s cubic-bezier(0.34,1.3,0.64,1);
+    }
+    .card.open .chevron svg { transform: rotate(180deg); }
+    .card.session-card .chevron { display: none; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1 class="site-title">Focus</h1>
+    <a class="back-link" id="backLink">← Choose method</a>
+  </header>
+
+  <div class="grid" id="grid">
+
+    <!-- ── Card 1: Flowtime ── -->
+    <div class="card" data-card="1">
+      <div class="card-image-wrap">
+        <img src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=900&q=85&auto=format&fit=crop" alt="Forest" />
+        <div class="card-overlay">
+          <div class="card-label">
+            <h2>Flowtime</h2>
+            <p>Work with your natural rhythm</p>
+          </div>
+          <button class="start-btn" data-method="flowtime">Start Session</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-body-inner">
+          <div class="stats">
+            <div class="stat"><div class="stat-value">Open</div><div class="stat-label">Duration</div></div>
+            <div class="stat"><div class="stat-value">You</div><div class="stat-label">Controls Break</div></div>
+            <div class="stat"><div class="stat-value">0</div><div class="stat-label">Interruptions</div></div>
+          </div>
+          <p class="tagline">Work until you stop. Break when it feels right.</p>
+          <!-- Flowtime setup -->
+          <div class="setup-view" id="setup1">
+            <div class="setup-inputs">
+              <div class="setup-field">
+                <span class="setup-label">Work</span>
+                <input type="number" class="time-input" id="workMin" value="25" min="1" max="180" />
+                <span class="setup-unit">min</span>
+              </div>
+              <div class="setup-field">
+                <span class="setup-label">Break</span>
+                <input type="number" class="time-input" id="breakMin" value="5" min="1" max="60" />
+                <span class="setup-unit">min</span>
+              </div>
+            </div>
+            <button class="begin-btn" id="flowtimeBegin">Begin</button>
+          </div>
+          <!-- Timer -->
+          <div class="timer-view" id="timer1">
+            <div class="phase-badge" id="phase1">WORKING</div>
+            <div class="timer-digits" id="digits1">—</div>
+            <button class="end-btn" data-card="1">End Session</button>
+          </div>
+        </div>
+      </div>
+      <div class="chevron">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </div>
+    </div>
+
+    <!-- ── Card 2: 52·17 ── -->
+    <div class="card" data-card="2">
+      <div class="card-image-wrap">
+        <img src="https://images.unsplash.com/photo-1505118380757-91f5f5632de0?w=900&q=85&auto=format&fit=crop" alt="Ocean" />
+        <div class="card-overlay">
+          <div class="card-label">
+            <h2>52 · 17</h2>
+            <p>The productivity sweet spot</p>
+          </div>
+          <button class="start-btn" data-method="52-17">Start Session</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-body-inner">
+          <div class="stats">
+            <div class="stat"><div class="stat-value">52 min</div><div class="stat-label">Work</div></div>
+            <div class="stat"><div class="stat-value">17 min</div><div class="stat-label">Break</div></div>
+            <div class="stat"><div class="stat-value">Auto</div><div class="stat-label">Switch</div></div>
+          </div>
+          <p class="tagline">A sound handles every transition. You just work.</p>
+          <div class="timer-view" id="timer2">
+            <div class="phase-badge" id="phase2">WORKING</div>
+            <div class="timer-digits" id="digits2">52:00</div>
+            <button class="end-btn" data-card="2">End Session</button>
+          </div>
+        </div>
+      </div>
+      <div class="chevron">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </div>
+    </div>
+
+    <!-- ── Card 3: 90 Min ── -->
+    <div class="card" data-card="3">
+      <div class="card-image-wrap">
+        <img src="https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=900&q=85&auto=format&fit=crop" alt="Milky Way" />
+        <div class="card-overlay">
+          <div class="card-label">
+            <h2>90 Min Deep Work</h2>
+            <p>One block. Full focus.</p>
+          </div>
+          <button class="start-btn" data-method="90min">Start Session</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-body-inner">
+          <div class="stats">
+            <div class="stat"><div class="stat-value">90 min</div><div class="stat-label">Duration</div></div>
+            <div class="stat"><div class="stat-value">1–3×</div><div class="stat-label">Per Day</div></div>
+            <div class="stat"><div class="stat-value">1 task</div><div class="stat-label">Focus</div></div>
+          </div>
+          <p class="tagline">Matches your brain's natural 90-min cycle. Sound ends it.</p>
+          <div class="timer-view" id="timer3">
+            <div class="phase-badge" id="phase3">WORKING</div>
+            <div class="timer-digits" id="digits3">90:00</div>
+            <button class="end-btn" data-card="3">End Session</button>
+          </div>
+        </div>
+      </div>
+      <div class="chevron">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // ─── State ───────────────────────────────────────────────────
+    let s = {
+      method: null, cardNum: null, phase: 'work',
+      secs: 0, breakSecs: 0, interval: null
+    };
+
+    // ─── Helpers ─────────────────────────────────────────────────
+    const fmt = secs => {
+      const m = Math.floor(Math.abs(secs) / 60);
+      const sc = Math.abs(secs) % 60;
+      return `${String(m).padStart(2,'0')}:${String(sc).padStart(2,'0')}`;
+    };
+
+    const updateTab = () => {
+      if (!s.method) { document.title = 'Focus'; return; }
+      if (s.phase === 'done') { document.title = 'Done · Focus'; return; }
+      const prefix = s.phase === 'break' ? 'Break ' : '';
+      document.title = `${prefix}${fmt(s.secs)} · Focus`;
+    };
+
+    // ─── Gong (Web Audio) ────────────────────────────────────────
+    const playGong = () => {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const now = ctx.currentTime;
+      // Strike burst
+      const bl  = Math.floor(ctx.sampleRate * 0.04);
+      const buf = ctx.createBuffer(1, bl, ctx.sampleRate);
+      const d   = buf.getChannelData(0);
+      for (let i = 0; i < bl; i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/bl, 2);
+      const noise = ctx.createBufferSource();
+      noise.buffer = buf;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.22, now);
+      ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+      noise.connect(ng); ng.connect(ctx.destination); noise.start(now);
+      // Inharmonic partials (bronze gong character)
+      [
+        {f:92, a:0.55, d:7.5}, {f:180, a:0.35, d:5.5}, {f:271, a:0.22, d:4.2},
+        {f:365,a:0.14, d:3.2}, {f:452, a:0.10, d:2.5}, {f:620, a:0.07, d:2.0},
+        {f:880,a:0.04, d:1.4}, {f:1240,a:0.02, d:1.0}
+      ].forEach(({f, a, d}) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(f * 1.012, now);
+        o.frequency.exponentialRampToValueAtTime(f, now + 0.06);
+        g.gain.setValueAtTime(0, now);
+        g.gain.linearRampToValueAtTime(a, now + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + d);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(now); o.stop(now + d + 0.1);
+      });
+    };
+
+    // ─── Center Card (FLIP animation) ────────────────────────────
+    const centerCard = card => new Promise(resolve => {
+      const r   = card.getBoundingClientRect();
+      const tw  = Math.min(480, window.innerWidth - 80);
+      const tl  = (window.innerWidth  - tw) / 2;
+      const tt  = 112;
+
+      // Pin card to current position
+      card.style.position   = 'fixed';
+      card.style.left       = r.left   + 'px';
+      card.style.top        = r.top    + 'px';
+      card.style.width      = r.width  + 'px';
+      card.style.zIndex     = '100';
+      card.style.margin     = '0';
+      card.style.transition = 'none';
+
+      card.getBoundingClientRect(); // force reflow
+
+      // Animate to center
+      requestAnimationFrame(() => {
+        card.style.transition = [
+          'left 0.68s cubic-bezier(0.4,0,0.2,1)',
+          'top  0.68s cubic-bezier(0.4,0,0.2,1)',
+          'width 0.68s cubic-bezier(0.4,0,0.2,1)',
+          'box-shadow 0.68s ease'
+        ].join(', ');
+        card.style.left      = tl + 'px';
+        card.style.top       = tt + 'px';
+        card.style.width     = tw + 'px';
+        card.style.boxShadow = '0 28px 90px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)';
+      });
+
+      setTimeout(resolve, 720);
+    });
+
+    // ─── Open card body ───────────────────────────────────────────
+    const openBody = card => {
+      const body  = card.querySelector('.card-body');
+      const inner = card.querySelector('.card-body-inner');
+      body.style.transition = 'height 0.48s cubic-bezier(0.4,0,0.2,1)';
+      body.style.height = inner.offsetHeight + 'px';
+      card.classList.add('open');
+      body.addEventListener('transitionend', () => {
+        body.style.height = 'auto';
+      }, { once: true });
+    };
+
+    // ─── Display update ───────────────────────────────────────────
+    const updateDisplay = () => {
+      const n = s.cardNum;
+      const digits = document.getElementById('digits' + n);
+      const badge  = document.getElementById('phase'  + n);
+      if (!digits || !badge) return;
+      if (s.phase === 'done') {
+        badge.textContent = 'DONE';   badge.className = 'phase-badge done';
+        digits.textContent = '—';     digits.className = 'timer-digits done';
+      } else if (s.phase === 'break') {
+        badge.textContent = 'BREAK';  badge.className = 'phase-badge break';
+        digits.textContent = fmt(s.secs); digits.className = 'timer-digits break';
+      } else {
+        badge.textContent = 'WORKING'; badge.className = 'phase-badge';
+        digits.textContent = fmt(s.secs); digits.className = 'timer-digits';
+      }
+    };
+
+    // ─── Phase end logic ──────────────────────────────────────────
+    const onWorkEnd = () => {
+      clearInterval(s.interval);
+      playGong();
+      if (s.method === '90min') {
+        s.phase = 'done';
+        updateDisplay();
+        document.title = 'Done · Focus';
+        return;
+      }
+      // Transition to break
+      s.phase = 'break';
+      s.secs  = s.breakSecs;
+      updateDisplay(); updateTab();
+      s.interval = setInterval(tickBreak, 1000);
+    };
+
+    const onBreakEnd = () => {
+      clearInterval(s.interval);
+      playGong();
+      if (s.method === '52-17') {
+        // Auto-restart work cycle
+        s.phase = 'work';
+        s.secs  = 52 * 60;
+        updateDisplay(); updateTab();
+        s.interval = setInterval(tickWork, 1000);
+      } else {
+        // Flowtime: single session done
+        s.phase = 'done';
+        updateDisplay();
+        document.title = 'Done · Focus';
+      }
+    };
+
+    // ─── Tickers ──────────────────────────────────────────────────
+    const tickWork = () => {
+      s.secs--;
+      if (s.secs <= 0) { s.secs = 0; updateDisplay(); updateTab(); onWorkEnd(); return; }
+      updateDisplay(); updateTab();
+    };
+
+    const tickBreak = () => {
+      s.secs--;
+      if (s.secs <= 0) { s.secs = 0; updateDisplay(); updateTab(); onBreakEnd(); return; }
+      updateDisplay(); updateTab();
+    };
+
+    // ─── Launch session ───────────────────────────────────────────
+    const launchSession = async (method, card) => {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      s.method  = method;
+      s.cardNum = card.dataset.card;
+      s.phase   = 'work';
+      card.classList.add('session-card');
+
+      // Fade out other cards (staggered)
+      document.querySelectorAll('.card').forEach((c, i) => {
+        if (c === card) return;
+        const delay = i * 60;
+        setTimeout(() => {
+          c.style.transition = `opacity 0.4s ease, transform 0.45s cubic-bezier(0.4,0,0.2,1)`;
+          c.classList.add('hidden');
+          setTimeout(() => { c.style.visibility = 'hidden'; }, 460);
+        }, delay);
+      });
+
+      // Center this card
+      await centerCard(card);
+
+      // Reveal back link
+      document.getElementById('backLink').classList.add('visible');
+
+      // Swap content
+      card.querySelector('.stats').style.display  = 'none';
+      card.querySelector('.tagline').style.display = 'none';
+
+      if (method === 'flowtime') {
+        document.getElementById('setup1').classList.add('active');
+        openBody(card);
+      } else {
+        s.secs      = method === '52-17' ? 52 * 60 : 90 * 60;
+        s.breakSecs = method === '52-17' ? 17 * 60 : 0;
+        document.getElementById('timer' + s.cardNum).classList.add('active');
+        openBody(card);
+        updateDisplay(); updateTab();
+        s.interval = setInterval(tickWork, 1000);
+      }
+    };
+
+    // ─── Flowtime: begin after setup ─────────────────────────────
+    document.getElementById('flowtimeBegin').addEventListener('click', e => {
+      e.stopPropagation();
+      const work = Math.max(1, parseInt(document.getElementById('workMin').value)  || 25);
+      const brk  = Math.max(1, parseInt(document.getElementById('breakMin').value) || 5);
+      s.secs      = work * 60;
+      s.breakSecs = brk  * 60;
+
+      document.getElementById('setup1').classList.remove('active');
+      document.getElementById('timer1').classList.add('active');
+
+      // Re-measure body after content swap
+      const card  = document.querySelector('[data-card="1"]');
+      const body  = card.querySelector('.card-body');
+      const inner = card.querySelector('.card-body-inner');
+      body.style.transition = 'height 0.38s cubic-bezier(0.4,0,0.2,1)';
+      body.style.height = inner.offsetHeight + 'px';
+      body.addEventListener('transitionend', () => { body.style.height = 'auto'; }, { once: true });
+
+      updateDisplay(); updateTab();
+      s.interval = setInterval(tickWork, 1000);
+    });
+
+    // ─── Reset ───────────────────────────────────────────────────
+    const resetSession = () => {
+      clearInterval(s.interval);
+      s = { method: null, cardNum: null, phase: 'work', secs: 0, breakSecs: 0, interval: null };
+      document.title = 'Focus';
+      document.getElementById('backLink').classList.remove('visible');
+
+      document.querySelectorAll('.card').forEach((card, i) => {
+        // Clear all inline styles (fixed positioning etc.)
+        ['position','left','top','width','zIndex','margin','transition','boxShadow','opacity','transform','visibility'].forEach(p => {
+          card.style[p] = '';
+        });
+
+        card.classList.remove('hidden', 'session-card', 'open');
+
+        const body = card.querySelector('.card-body');
+        body.style.height = '0';
+
+        card.querySelector('.stats').style.display  = '';
+        card.querySelector('.tagline').style.display = '';
+        card.querySelectorAll('.timer-view, .setup-view').forEach(v => v.classList.remove('active'));
+
+        const n = card.dataset.card;
+        const badge  = document.getElementById('phase'  + n);
+        const digits = document.getElementById('digits' + n);
+        if (badge)  { badge.textContent = 'WORKING'; badge.className = 'phase-badge'; }
+        if (digits) {
+          digits.className  = 'timer-digits';
+          digits.textContent = n === '2' ? '52:00' : n === '3' ? '90:00' : '—';
+        }
+
+        // Stagger back in
+        card.style.opacity   = '0';
+        card.style.transform = 'scale(0.92) translateY(16px)';
+        setTimeout(() => {
+          card.style.transition = `opacity 0.45s ease, transform 0.5s cubic-bezier(0.34,1.3,0.64,1), box-shadow 0.3s ease`;
+          card.style.opacity    = '1';
+          card.style.transform  = 'none';
+        }, 60 + i * 80);
+      });
+    };
+
+    // ─── Card tap (expand/collapse, idle only) ───────────────────
+    document.querySelectorAll('.card').forEach(card => {
+      card.addEventListener('click', e => {
+        if (e.target.closest('.start-btn,.end-btn,.begin-btn,.time-input')) return;
+        if (card.classList.contains('session-card')) return;
+
+        const body  = card.querySelector('.card-body');
+        const inner = card.querySelector('.card-body-inner');
+        const isOpen = card.classList.contains('open');
+        if (isOpen) {
+          body.style.height = body.scrollHeight + 'px';
+          requestAnimationFrame(() => requestAnimationFrame(() => { body.style.height = '0'; }));
+          card.classList.remove('open');
+        } else {
+          body.style.height = inner.offsetHeight + 'px';
+          card.classList.add('open');
+          body.addEventListener('transitionend', () => {
+            if (card.classList.contains('open')) body.style.height = 'auto';
+          }, { once: true });
+        }
+      });
+    });
+
+    // ─── Start buttons ───────────────────────────────────────────
+    document.querySelectorAll('.start-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        launchSession(btn.dataset.method, btn.closest('.card'));
+      });
+    });
+
+    // ─── End buttons ─────────────────────────────────────────────
+    document.querySelectorAll('.end-btn').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); resetSession(); });
+    });
+
+    document.getElementById('backLink').addEventListener('click', resetSession);
+  </script>
+
+</body>
+</html>

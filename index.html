@@ -108,12 +108,16 @@
       font-weight: 600;
       color: var(--text-primary);
       letter-spacing: -0.6px;
-      transition: color 0.4s;
+      transition: opacity 0.35s ease, transform 0.4s cubic-bezier(0.34,1.3,0.64,1), color 0.4s;
+    }
+    .site-title.switching {
+      opacity: 0;
+      transform: translateY(-6px);
     }
     .back-link {
       font-size: 13px;
       font-weight: 500;
-      color: var(--text-faint);
+      color: var(--text-secondary);
       text-decoration: none;
       cursor: pointer;
       opacity: 0;
@@ -124,7 +128,7 @@
       transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.34,1.3,0.64,1), color 0.2s, height 0.4s ease;
     }
     .back-link.visible { opacity: 1; pointer-events: auto; height: 20px; transform: translateY(0); }
-    .back-link:hover { color: var(--text-secondary); }
+    .back-link:hover { color: var(--text-primary); }
 
     /* ── Grid ── */
     .grid {
@@ -403,9 +407,9 @@
 
     /* ── Card caption ── */
     .card-caption {
-      text-align: center; font-size: 17px;
+      text-align: center; font-size: 20px;
       color: var(--caption-color); font-weight: 600;
-      letter-spacing: -0.4px; margin-top: 12px;
+      letter-spacing: -0.3px; margin-top: 12px;
       transition: color 0.4s, opacity 0.4s ease;
     }
 
@@ -570,7 +574,7 @@
   </div>
 
   <header>
-    <h1 class="site-title">Focus</h1>
+    <h1 class="site-title" id="siteTitle">Choose Focus Mode</h1>
     <a class="back-link" id="backLink">← Choose method</a>
   </header>
 
@@ -592,9 +596,9 @@
       <div class="card-body">
         <div class="card-body-inner">
           <div class="stats">
-            <div class="stat"><div class="stat-value">Open</div><div class="stat-label">Duration</div></div>
-            <div class="stat"><div class="stat-value">You</div><div class="stat-label">Controls Break</div></div>
-            <div class="stat"><div class="stat-value">0</div><div class="stat-label">Interruptions</div></div>
+            <div class="stat"><div class="stat-value">Flexible</div><div class="stat-label">Duration</div></div>
+            <div class="stat"><div class="stat-value">Flexible</div><div class="stat-label">Break Time</div></div>
+            <div class="stat"><div class="stat-value">Flexible</div><div class="stat-label">Repeat Mode</div></div>
           </div>
           <p class="tagline">Work until you stop. Break when it feels right.</p>
           <div class="setup-view" id="setup1">
@@ -609,6 +613,10 @@
                 <input type="number" class="time-input" id="breakMin" value="5" min="1" max="60" />
                 <span class="setup-unit">min</span>
               </div>
+            </div>
+            <div class="sound-picker" id="repeatPicker">
+              <button class="sound-opt selected" data-repeat="once">Once</button>
+              <button class="sound-opt" data-repeat="loop">Loop</button>
             </div>
             <button class="begin-btn" id="flowtimeBegin">Begin</button>
           </div>
@@ -635,7 +643,7 @@
         <img src="images/52-17.jpg" alt="52·17" />
         <div class="card-overlay">
           <div class="card-label">
-            <h2>52 · 17</h2>
+            <h2>52·17 Rule</h2>
             <p>The productivity sweet spot · Auto-starts</p>
           </div>
           <button class="start-btn" data-method="52-17">Start Session</button>
@@ -662,7 +670,7 @@
         </svg>
       </div>
     </div>
-    <div class="card-caption">Work Sprint</div>
+    <div class="card-caption">52·17 Rule</div>
     </div>
 
     <!-- ── Card 3: 90 Min ── -->
@@ -683,7 +691,7 @@
           <div class="stats">
             <div class="stat"><div class="stat-value">90 min</div><div class="stat-label">Duration</div></div>
             <div class="stat"><div class="stat-value">1–3×</div><div class="stat-label">Per Day</div></div>
-            <div class="stat"><div class="stat-value">1 task</div><div class="stat-label">Focus</div></div>
+            <div class="stat"><div class="stat-value">Off</div><div class="stat-label">Repeat</div></div>
           </div>
           <p class="tagline">Matches your brain's natural 90-min cycle. Sound ends it.</p>
           <div class="timer-view" id="timer3">
@@ -706,12 +714,47 @@
 
   <script>
     // ─── State ────────────────────────────────────────────────────
-    let s = { method: null, cardNum: null, phase: 'work', secs: 0, breakSecs: 0, interval: null };
+    let s = { method: null, cardNum: null, phase: 'work', secs: 0, breakSecs: 0, interval: null, loop: false };
 
     const settings = { muted: false, volume: 0.8, sound: 'silver', deepBreath: false };
 
-    // ─── Audio context (reuse to avoid browser limit) ─────────────
+    // ─── Audio: unlock on first tap + bypass iOS silent mode ──────
     let _audioCtx = null;
+    let _audioUnlocked = false;
+
+    // Silent audio element keeps the audio session active and
+    // forces iOS to treat our sounds as media (bypasses silent switch)
+    const _silentAudio = document.createElement('audio');
+    _silentAudio.setAttribute('playsinline', '');
+    _silentAudio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRwRHAAAAAAD/+1DEAAAHAAGf9AAAIgAANIAAAAQAAAGkAAAAIAAANIAAAARMQU1FMy4xMDBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ==';
+    _silentAudio.loop = true;
+
+    const unlockAudio = () => {
+      if (_audioUnlocked) return;
+      _audioUnlocked = true;
+
+      // Play silent audio to claim the media audio session
+      _silentAudio.play().catch(() => {});
+
+      // Create and unlock the AudioContext
+      if (!_audioCtx) {
+        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (_audioCtx.state === 'suspended') _audioCtx.resume();
+
+      // Play a silent buffer through Web Audio to fully unlock it
+      const buf = _audioCtx.createBuffer(1, 1, 22050);
+      const src = _audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(_audioCtx.destination);
+      src.start(0);
+    };
+
+    // Unlock on any user interaction
+    ['click', 'touchstart', 'touchend'].forEach(evt => {
+      document.addEventListener(evt, unlockAudio, { once: false, passive: true });
+    });
+
     const getAudioCtx = () => {
       if (!_audioCtx || _audioCtx.state === 'closed') {
         _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1106,6 +1149,11 @@
         s.phase = 'work'; s.secs = 52 * 60;
         updateDisplay(); updateTab();
         s.interval = setInterval(tickWork, 1000);
+      } else if (s.method === 'flowtime' && s.loop) {
+        if (settings.deepBreath) await startBreath();
+        s.phase = 'work'; s.secs = s.workSecs;
+        updateDisplay(); updateTab();
+        s.interval = setInterval(tickWork, 1000);
       } else {
         s.phase = 'done'; updateDisplay(); document.title = 'Done · Focus';
         showStartAgain();
@@ -1126,6 +1174,8 @@
 
     // ─── Launch session ───────────────────────────────────────────
     const launchSession = async (method, card) => {
+      // Keep silent audio alive during session (iOS silent mode bypass)
+      _silentAudio.play().catch(() => {});
       window.scrollTo({ top: 0, behavior: 'instant' });
       s.method = method; s.cardNum = card.dataset.card; s.phase = 'work';
       card.classList.add('session-card');
@@ -1148,6 +1198,9 @@
 
       await (isMobile() ? mobileLaunchCard(card) : centerCard(card));
       document.getElementById('backLink').classList.add('visible');
+      const titleEl = document.getElementById('siteTitle');
+      titleEl.classList.add('switching');
+      setTimeout(() => { titleEl.textContent = 'Focus'; titleEl.classList.remove('switching'); }, 380);
       card.querySelector('.stats').style.display   = 'none';
       card.querySelector('.tagline').style.display = 'none';
       card.querySelector('.start-btn').style.display = 'none';
@@ -1167,11 +1220,20 @@
     };
 
     // ─── Flowtime begin ───────────────────────────────────────────
+    // Repeat picker
+    document.querySelectorAll('#repeatPicker .sound-opt').forEach(opt => {
+      opt.addEventListener('click', () => {
+        document.querySelectorAll('#repeatPicker .sound-opt').forEach(o => o.classList.remove('selected'));
+        opt.classList.add('selected');
+      });
+    });
+
     document.getElementById('flowtimeBegin').addEventListener('click', async e => {
       e.stopPropagation();
       const work = Math.max(1, parseInt(document.getElementById('workMin').value)  || 25);
       const brk  = Math.max(1, parseInt(document.getElementById('breakMin').value) || 5);
-      s.secs = work * 60; s.breakSecs = brk * 60;
+      s.secs = work * 60; s.breakSecs = brk * 60; s.workSecs = work * 60;
+      s.loop = document.querySelector('#repeatPicker .sound-opt.selected')?.dataset.repeat === 'loop';
 
       document.getElementById('setup1').classList.remove('active');
       document.getElementById('timer1').classList.add('active');
@@ -1191,6 +1253,8 @@
     // ─── Reset ────────────────────────────────────────────────────
     const resetSession = () => {
       clearInterval(s.interval);
+      // Stop silent audio to save battery
+      _silentAudio.pause();
       s = { method: null, cardNum: null, phase: 'work', secs: 0, breakSecs: 0, interval: null };
       document.title = 'Focus';
       document.getElementById('backLink').classList.remove('visible');

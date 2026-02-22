@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gong Sounds — Focus</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #EFEFEF;
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+      min-height: 100vh;
+      padding: 64px 40px 80px;
+      -webkit-font-smoothing: antialiased;
+    }
+    header { text-align: center; margin-bottom: 16px; }
+    header h1 { font-size: 22px; font-weight: 600; color: #111; letter-spacing: -0.5px; }
+    header p  { font-size: 13px; color: #AAA; margin-top: 6px; }
+    .ref { text-align: center; margin-bottom: 40px; }
+    .ref span {
+      display: inline-block;
+      background: #111; color: #fff;
+      font-size: 12px; font-weight: 500;
+      padding: 6px 16px; border-radius: 50px;
+      letter-spacing: 0.02em;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+      max-width: 920px;
+      margin: 0 auto;
+    }
+    .sound-card {
+      background: #fff;
+      border-radius: 20px;
+      padding: 20px 22px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05), 0 0 0 1px rgba(0,0,0,0.04);
+      display: flex; align-items: center; gap: 16px;
+      cursor: pointer;
+      transition: transform 0.25s cubic-bezier(0.34,1.3,0.64,1), box-shadow 0.25s ease;
+      user-select: none;
+    }
+    .sound-card:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,0,0,0.09), 0 0 0 1px rgba(0,0,0,0.04); }
+    .sound-card:active { transform: scale(0.98); }
+    .sound-card.playing { box-shadow: 0 0 0 2px #111, 0 8px 28px rgba(0,0,0,0.1); }
+
+    .play-btn {
+      flex-shrink: 0; width: 44px; height: 44px;
+      background: #F5F5F5; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.2s;
+    }
+    .sound-card.playing .play-btn { background: #111; }
+    .play-btn svg path { transition: fill 0.2s; }
+    .sound-card.playing .play-btn svg path { fill: #fff; }
+
+    .sound-info { flex: 1; min-width: 0; }
+    .sound-num  { font-size: 11px; color: #CCC; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+    .sound-name { font-size: 15px; font-weight: 600; color: #111; margin-top: 2px; letter-spacing: -0.2px; }
+    .sound-desc { font-size: 12px; color: #AAA; margin-top: 3px; }
+
+    .waveform { display: flex; align-items: center; gap: 2px; height: 20px; opacity: 0.2; transition: opacity 0.3s; }
+    .sound-card.playing .waveform { opacity: 1; }
+    .bar { width: 3px; background: #111; border-radius: 2px; }
+    .bar:nth-child(1) { height: 7px;  animation-delay: 0s; }
+    .bar:nth-child(2) { height: 13px; animation-delay: 0.12s; }
+    .bar:nth-child(3) { height: 9px;  animation-delay: 0.24s; }
+    .bar:nth-child(4) { height: 17px; animation-delay: 0.06s; }
+    .bar:nth-child(5) { height: 11px; animation-delay: 0.18s; }
+    .sound-card.playing .bar { animation: wave 0.7s ease-in-out infinite alternate; }
+    @keyframes wave { from { transform: scaleY(0.35); } to { transform: scaleY(1); } }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>08 Variations</h1>
+    <p>All based on Silver Meditation Bell — tell me your number.</p>
+  </header>
+  <div class="ref"><span>Reference: 08 — Silver Meditation Bell · Delicate · High · Elegant shimmer</span></div>
+
+  <div class="grid" id="grid"></div>
+
+  <script>
+    // ── Shared utilities ──────────────────────────────────────────
+    function makeReverb(ctx, secs, decay, wet) {
+      const len = Math.floor(ctx.sampleRate * secs);
+      const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) {
+        const d = buf.getChannelData(ch);
+        for (let i = 0; i < len; i++)
+          d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, decay);
+      }
+      const conv = ctx.createConvolver(); conv.buffer = buf;
+      const dryG = ctx.createGain(), wetG = ctx.createGain();
+      dryG.gain.value = 1 - wet; wetG.gain.value = wet;
+      conv.connect(wetG);
+      dryG.connect(ctx.destination); wetG.connect(ctx.destination);
+      return { dry: dryG, wet: wetG, conv };
+    }
+
+    function part(ctx, dest, f, a, atk, dec, drift = 1.006) {
+      const now = ctx.currentTime;
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(f * drift, now);
+      o.frequency.exponentialRampToValueAtTime(f, now + 0.06);
+      g.gain.setValueAtTime(0, now);
+      g.gain.linearRampToValueAtTime(a, now + atk);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dec);
+      o.connect(g); g.connect(dest);
+      o.start(now); o.stop(now + dec + 0.1);
+    }
+
+    function hit(ctx, amp, dur) {
+      const now = ctx.currentTime;
+      const bl = Math.floor(ctx.sampleRate * dur);
+      const buf = ctx.createBuffer(1, bl, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < bl; i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/bl, 3);
+      const s = ctx.createBufferSource(), g = ctx.createGain();
+      s.buffer = buf;
+      g.gain.setValueAtTime(amp, now); g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      s.connect(g); g.connect(ctx.destination); s.start(now);
+    }
+
+    // ── 10 variations of 08 ───────────────────────────────────────
+    const SOUNDS = [
+
+      // A — Warmer pitch (660 Hz root) — feels softer, less sharp
+      {
+        name: 'Warm Silver',
+        desc: '660 Hz · Softer root · Gentle shimmer',
+        play(ctx) {
+          const r = makeReverb(ctx, 2, 2.5, 0.36);
+          hit(ctx, 0.06, 0.018);
+          [[660,0.52,0.003,4.8],[1815,0.20,0.004,3.4],[3564,0.08,0.005,2.2],[5280,0.03,0.006,1.4]]
+            .forEach(([f,a,atk,dec]) => { part(ctx,r.conv,f,a,atk,dec,1.005); part(ctx,r.dry,f,a*0.7,atk,dec,1.005); });
+        }
+      },
+
+      // B — Higher pitch (1046 Hz) — brighter, more crystalline
+      {
+        name: 'High Crystal',
+        desc: '1046 Hz · Bright · Almost glass-like',
+        play(ctx) {
+          const r = makeReverb(ctx, 2, 2.8, 0.40);
+          hit(ctx, 0.05, 0.014);
+          [[1046,0.50,0.003,4.2],[2876,0.18,0.004,2.8],[5640,0.07,0.004,1.8],[8330,0.03,0.005,1.0]]
+            .forEach(([f,a,atk,dec]) => { part(ctx,r.conv,f,a,atk,dec,1.005); part(ctx,r.dry,f,a*0.7,atk,dec,1.005); });
+        }
+      },
+
+      // C — Longer ring (8 seconds) — same character, much longer tail
+      {
+        name: 'Long Silver',
+        desc: '880 Hz · 8-second ring · Lingers beautifully',
+        play(ctx) {
+          const r = makeReverb(ctx, 4, 1.8, 0.44);
+          hit(ctx, 0.07, 0.018);
+          [[880,0.52,0.003,8.0],[2420,0.20,0.004,6.2],[4752,0.08,0.005,4.5],[7040,0.03,0.006,2.8]]
+            .forEach(([f,a,atk,dec]) => { part(ctx,r.conv,f,a,atk,dec,1.006); part(ctx,r.dry,f,a*0.7,atk,dec,1.006); });
+        }
+      },
+
+      // D — Twin detuned (880 + 882 Hz) — chorus warmth, subtle beating
+      {
+        name: 'Twin Silver',
+        desc: '880+882 Hz · Gentle chorus · Warm beating',
+        play(ctx) {
+          const r = makeReverb(ctx, 2.5, 2.4, 0.38);
+          hit(ctx, 0.07, 0.018);
+          [[880,0.42],[882,0.38]].forEach(([root,a]) => {
+            [[root,a,0.003,4.5],[root*2.75,a*0.4,0.004,3.2],[root*5.4,a*0.16,0.005,2.0]]
+              .forEach(([f,amp,atk,dec]) => { part(ctx,r.conv,f,amp,atk,dec,1.005); part(ctx,r.dry,f,amp*0.7,atk,dec,1.005); });
+          });
+        }
+      },
+
+      // E — Softer strike (no noise burst, slow attack) — bow-touched feel
+      {
+        name: 'Bowed Silver',
+        desc: '880 Hz · No strike · Fades in like a bow',
+        play(ctx) {
+          const r = makeReverb(ctx, 2.5, 2.2, 0.42);
+          [[880,0.55,0.06,5.5],[2420,0.22,0.07,4.0],[4752,0.09,0.09,2.8],[7040,0.03,0.10,1.6]]
+            .forEach(([f,a,atk,dec]) => { part(ctx,r.conv,f,a,atk,dec,1.002); part(ctx,r.dry,f,a*0.6,atk,dec,1.002); });
+        }
+      },
+
+      // F — Richer harmonics (6 partials) — fuller, more complex body
+      {
+        name: 'Rich Silver',
+        desc: '880 Hz · 6 partials · Fuller body',
+        play(ctx) {
+          const r = makeReverb(ctx, 2.5, 2.3, 0.38);
+          hit(ctx, 0.07, 0.018);
+          [[880,0.50,0.003,4.8],[2420,0.24,0.004,3.8],[3960,0.14,0.004,3.0],
+           [4752,0.09,0.005,2.2],[6600,0.05,0.005,1.6],[7040,0.03,0.006,1.0]]
+            .forEach(([f,a,atk,dec]) => { part(ctx,r.conv,f,a,atk,dec,1.006); part(ctx,r.dry,f,a*0.65,atk,dec,1.006); });
+        }
+      },
+
+      // G — Pure harmonic series (880, 1760, 2640, 3520) — cleaner, more tonal
+      {
+        name: 'Harmonic Silver',
+        desc: '880 Hz · True harmonics · Pure and tonal',
+        play(ctx) {
+          const r = makeReverb(ctx, 2, 2.6, 0.36);
+          hit(ctx, 0.06, 0.016);
+          [[880,0.55,0.003,5.0],[1760,0.22,0.004,3.8],[2640,0.10,0.004,2.8],[3520,0.05,0.005,1.8]]
+            .forEach(([f,a,atk,dec]) => { part(ctx,r.conv,f,a,atk,dec,1.004); part(ctx,r.dry,f,a*0.7,atk,dec,1.004); });
+        }
+      },
+
+      // H — Spacious reverb (same bell, wetter room) — floats in air
+      {
+        name: 'Silver in Space',
+        desc: '880 Hz · Large room · Floats and dissolves',
+        play(ctx) {
+          const r = makeReverb(ctx, 5, 1.6, 0.65);
+          hit(ctx, 0.07, 0.018);
+          [[880,0.52,0.003,4.5],[2420,0.20,0.004,3.2],[4752,0.08,0.005,2.0],[7040,0.03,0.006,1.2]]
+            .forEach(([f,a,atk,dec]) => { part(ctx,r.conv,f,a,atk,dec,1.006); part(ctx,r.dry,f,a*0.4,atk,dec,1.006); });
+        }
+      },
+
+      // I — Slightly harder strike (brighter, more presence)
+      {
+        name: 'Struck Silver',
+        desc: '880 Hz · Strong strike · More presence',
+        play(ctx) {
+          const r = makeReverb(ctx, 2, 2.4, 0.34);
+          hit(ctx, 0.14, 0.024);
+          [[880,0.52,0.003,4.5],[2420,0.22,0.003,3.2],[4752,0.10,0.004,2.0],[7040,0.04,0.005,1.2]]
+            .forEach(([f,a,atk,dec]) => { part(ctx,r.conv,f,a,atk,dec,1.007); part(ctx,r.dry,f,a*0.8,atk,dec,1.007); });
+        }
+      },
+
+      // J — Slightly lower root + longer (770 Hz, 6.5s) — balanced sweet spot
+      {
+        name: 'Golden Silver',
+        desc: '770 Hz · 6.5-second ring · Sweet spot',
+        play(ctx) {
+          const r = makeReverb(ctx, 3.5, 2.0, 0.42);
+          hit(ctx, 0.07, 0.019);
+          [[770,0.54,0.003,6.5],[2117,0.22,0.004,5.0],[4150,0.09,0.005,3.5],[6160,0.04,0.006,2.0]]
+            .forEach(([f,a,atk,dec]) => { part(ctx,r.conv,f,a,atk,dec,1.006); part(ctx,r.dry,f,a*0.7,atk,dec,1.006); });
+        }
+      },
+
+    ];
+
+    // ── Render ────────────────────────────────────────────────────
+    let activeCtx = null, activeCard = null;
+
+    SOUNDS.forEach((sound, i) => {
+      const card = document.createElement('div');
+      card.className = 'sound-card';
+      card.innerHTML = `
+        <div class="play-btn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M4 2.5L13 8L4 13.5V2.5Z" fill="#111"/>
+          </svg>
+        </div>
+        <div class="sound-info">
+          <div class="sound-num">${String(i+1).padStart(2,'0')}</div>
+          <div class="sound-name">${sound.name}</div>
+          <div class="sound-desc">${sound.desc}</div>
+        </div>
+        <div class="waveform">
+          <div class="bar"></div><div class="bar"></div>
+          <div class="bar"></div><div class="bar"></div>
+          <div class="bar"></div>
+        </div>
+      `;
+      card.addEventListener('click', () => {
+        if (activeCtx) { try { activeCtx.close(); } catch(e){} }
+        if (activeCard) activeCard.classList.remove('playing');
+        if (activeCard === card) { activeCard = null; activeCtx = null; return; }
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        activeCtx = ctx; activeCard = card;
+        card.classList.add('playing');
+        sound.play(ctx);
+        setTimeout(() => {
+          if (activeCard === card) { card.classList.remove('playing'); activeCard = null; }
+        }, 10000);
+      });
+      document.getElementById('grid').appendChild(card);
+    });
+  </script>
+</body>
+</html>

@@ -422,7 +422,7 @@
       align-items: center; justify-content: center; gap: 36px;
       background: var(--breath-bg);
       opacity: 0; pointer-events: none;
-      transition: opacity 0.7s ease;
+      transition: opacity 1s ease;
     }
     .breath-overlay.active { opacity: 1; pointer-events: auto; }
 
@@ -861,10 +861,10 @@
       rect.setAttribute('height', '0');
 
       overlay.classList.add('active');
-      playBreathSound();
 
-      // Small delay so overlay fades in before fill starts
+      // Wait for overlay to fully fade in before starting fill + sound
       setTimeout(() => {
+        playBreathSound();
         const start = performance.now();
         const animate = now => {
           const t = Math.min((now - start) / FILL_DUR, 1);
@@ -874,14 +874,15 @@
           rect.setAttribute('height', 200 * e);
           if (t < 1) { requestAnimationFrame(animate); }
           else {
+            // Hold the filled state, then fade out
             setTimeout(() => {
               overlay.classList.remove('active');
-              setTimeout(resolve, 750);
-            }, 400);
+              setTimeout(resolve, 1100);
+            }, 800);
           }
         };
         requestAnimationFrame(animate);
-      }, 500);
+      }, 1100);
     });
 
     const makeReverb = (ctx, duration) => {
@@ -1059,8 +1060,30 @@
       if (!card) return;
       const btn = card.querySelector('.start-btn');
       btn.textContent = 'Start Again';
-      btn.dataset.method = 'reload';
+      btn.dataset.method = 'restart';
       btn.style.display = '';
+    };
+
+    const restartSession = async () => {
+      clearInterval(s.interval);
+      const card = document.querySelector(`[data-card="${s.cardNum}"]`);
+      if (!card) return;
+      card.querySelector('.start-btn').style.display = 'none';
+
+      s.phase = 'work';
+      if (s.method === 'flowtime') {
+        const work = Math.max(1, parseInt(document.getElementById('workMin').value) || 25);
+        const brk  = Math.max(1, parseInt(document.getElementById('breakMin').value) || 5);
+        s.secs = work * 60; s.breakSecs = brk * 60;
+      } else if (s.method === '52-17') {
+        s.secs = 52 * 60; s.breakSecs = 17 * 60;
+      } else {
+        s.secs = 90 * 60; s.breakSecs = 0;
+      }
+
+      updateDisplay(); updateTab();
+      if (settings.deepBreath) await startBreath();
+      s.interval = setInterval(tickWork, 1000);
     };
 
     const onWorkEnd = () => {
@@ -1244,7 +1267,7 @@
     document.querySelectorAll('.start-btn').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
-        if (btn.dataset.method === 'stop' || btn.dataset.method === 'reload') { location.reload(); return; }
+        if (btn.dataset.method === 'restart') { restartSession(); return; }
         launchSession(btn.dataset.method, btn.closest('.card'));
       });
     });

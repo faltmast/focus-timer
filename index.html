@@ -733,35 +733,51 @@
       if (_audioUnlocked) return;
       _audioUnlocked = true;
 
-      // Play silent audio to claim the media audio session
       _silentAudio.play().catch(() => {});
 
-      // Create and unlock the AudioContext
-      if (!_audioCtx) {
-        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      }
+      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (_audioCtx.state === 'suspended') _audioCtx.resume();
 
-      // Play a silent buffer through Web Audio to fully unlock it
+      // Ping a silent buffer to fully unlock Web Audio
       const buf = _audioCtx.createBuffer(1, 1, 22050);
       const src = _audioCtx.createBufferSource();
-      src.buffer = buf;
-      src.connect(_audioCtx.destination);
-      src.start(0);
+      src.buffer = buf; src.connect(_audioCtx.destination); src.start(0);
     };
 
-    // Unlock on any user interaction
     ['click', 'touchstart', 'touchend'].forEach(evt => {
       document.addEventListener(evt, unlockAudio, { once: false, passive: true });
+    });
+
+    // When returning from background, force re-unlock on next tap
+    // (iOS suspends AudioContext on background; it can only resume via user gesture)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') _audioUnlocked = false;
     });
 
     const getAudioCtx = () => {
       if (!_audioCtx || _audioCtx.state === 'closed') {
         _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
-      if (_audioCtx.state === 'suspended') _audioCtx.resume();
+      if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
       return _audioCtx;
     };
+
+    // Keep AudioContext alive during a session so iOS doesn't suspend it.
+    // A 1-sample silent buffer every 4 s is enough to prevent suspension.
+    let _keepAlive = null;
+    const startKeepAlive = () => {
+      if (_keepAlive) return;
+      _keepAlive = setInterval(() => {
+        if (!_audioCtx) return;
+        if (_audioCtx.state === 'suspended') { _audioCtx.resume().catch(() => {}); return; }
+        try {
+          const b = _audioCtx.createBuffer(1, 1, 22050);
+          const s = _audioCtx.createBufferSource();
+          s.buffer = b; s.connect(_audioCtx.destination); s.start(0);
+        } catch(e) {}
+      }, 4000);
+    };
+    const stopKeepAlive = () => { clearInterval(_keepAlive); _keepAlive = null; };
 
     // ─── Sounds ───────────────────────────────────────────────────
     const playSound = async () => {
@@ -1176,8 +1192,8 @@ updateDisplay(); updateTab();
 
     // ─── Launch session ───────────────────────────────────────────
     const launchSession = async (method, card) => {
-      // Keep silent audio alive during session (iOS silent mode bypass)
       _silentAudio.play().catch(() => {});
+      startKeepAlive();
       window.scrollTo({ top: 0, behavior: 'instant' });
       s.method = method; s.cardNum = card.dataset.card; s.phase = 'work';
       card.classList.add('session-card');
@@ -1232,6 +1248,7 @@ updateDisplay(); updateTab();
 
     document.getElementById('flowtimeBegin').addEventListener('click', async e => {
       e.stopPropagation();
+      startKeepAlive();
       const work = Math.max(1, parseInt(document.getElementById('workMin').value)  || 25);
       const brk  = Math.max(1, parseInt(document.getElementById('breakMin').value) || 5);
       s.secs = work * 60; s.breakSecs = brk * 60; s.workSecs = work * 60;
@@ -1255,7 +1272,7 @@ updateDisplay(); updateTab();
     // ─── Reset ────────────────────────────────────────────────────
     const resetSession = () => {
       clearInterval(s.interval);
-      // Stop silent audio to save battery
+      stopKeepAlive();
       _silentAudio.pause();
       s = { method: null, cardNum: null, phase: 'work', secs: 0, breakSecs: 0, interval: null };
       document.title = 'Focus';

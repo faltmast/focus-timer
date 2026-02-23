@@ -154,8 +154,11 @@
     .card:hover { box-shadow: var(--card-shadow-hover); transform: translateY(-2px); }
     .card:active { transform: scale(0.99); }
     .card.hidden { opacity: 0; transform: scale(0.91) translateY(18px) !important; pointer-events: none; }
-    .card.session-card { cursor: default; overflow: visible; }
+    .card.session-card { cursor: default; overflow: hidden; }
     .card.session-card:hover { box-shadow: 0 24px 80px rgba(0,0,0,0.2), 0 0 0 1px var(--border); transform: none !important; }
+    .card.session-card .card-image-wrap { height: 200px; transition: height 0.6s cubic-bezier(0.4,0,0.2,1); }
+
+    body.session-active { overflow: hidden; }
 
     /* ── Image ── */
     .card-image-wrap {
@@ -1242,6 +1245,7 @@ updateDisplay(); updateTab();
     const launchSession = async (method, card) => {
       startKeepAlive();
       window.scrollTo({ top: 0, behavior: 'instant' });
+      document.body.classList.add('session-active');
       s.method = method; s.cardNum = card.dataset.card; s.phase = 'work';
       card.classList.add('session-card');
 
@@ -1321,6 +1325,7 @@ updateDisplay(); updateTab();
     const resetSession = () => {
       clearInterval(s.interval);
       stopKeepAlive();
+      document.body.classList.remove('session-active');
       s = { method: null, cardNum: null, phase: 'work', secs: 0, breakSecs: 0, interval: null };
       document.title = 'Focus';
       document.getElementById('backLink').classList.remove('visible');

@@ -935,7 +935,7 @@
       if (ctx.state !== 'running') { try { await ctx.resume(); } catch(e) { return; } }
       const now = ctx.currentTime;
       const vol = settings.volume * 0.22;
-      const dur = 4.5;
+      const dur = 5.5;
 
       const bufLen = Math.floor(ctx.sampleRate * (dur + 0.5));
       const buf = ctx.createBuffer(2, bufLen, ctx.sampleRate);
@@ -954,8 +954,8 @@
 
       const gain = ctx.createGain();
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(vol, now + 1.4);
-      gain.gain.setValueAtTime(vol, now + dur - 1.2);
+      gain.gain.linearRampToValueAtTime(vol, now + 0.8);
+      gain.gain.setValueAtTime(vol, now + dur - 1.4);
       gain.gain.linearRampToValueAtTime(0, now + dur);
 
       src.connect(hp); hp.connect(bp); bp.connect(gain); gain.connect(ctx.destination);
@@ -966,7 +966,7 @@
     const startBreath = () => new Promise(resolve => {
       const overlay  = document.getElementById('breathOverlay');
       const rect     = document.getElementById('breathRect');
-      const FILL_DUR = 4500;
+      const FILL_DUR = 5500;
 
       // Reset clip rect for repeat uses
       rect.setAttribute('y', '200');
